@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Segment Road Distance Within Radius</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.css" />
+<link href="https://fonts.googleapis.com/css2?family=Fira+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+
+  #map { height: 92vh; }
+  #controls { padding: 6px; font-family: sans-serif; }
+  .segment-label {
+    /* background: white; */
+    /* border: 1px solid gray; */
+    padding: 2px 4px;
+    font-size: 12px;
+  }
+  .total-label {
+    */ background: white; */
+    */ border: 2px solid black; */
+    padding: 4px 6px;
+    font-size: 14px;
+    font-weight: bold;
+  }
+
+  /* hides turn-by-turn panel */
+  .leaflet-routing-container {
+    display: none !important;
+  }
+  
+  .results-control {
+    background: white;
+    padding: 10px 14px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  }
+  
+  #controls {
+    padding: 6px;
+    font-family: sans-serif;
+  }
+
+  #controls .row {
+    margin-bottom: 4px;
+  }
+
+  #controls button {
+    margin-right: 6px;
+  }
+
+  #controls input {
+    margin-left: 3px;
+    margin-right: 12px;
+  }
+  
+  #controls .row span {
+    font-size: 0.9em;
+    color: #222;
+  }
+
+  #controls .row label,
+  #controls .row span {
+    font-size: 0.9em;
+  }
+
+  body, #controls, #results, .segment-label, .total-label {
+    font-family: "Fira Sans", Arial, sans-serif;
+
+/* input fields styling */
+.calc-input {
+  width: 70px;           /* consistent width for all inputs */
+  margin-left: 3px;
+  margin-right: 12px;
+  padding: 2px 4px;
+  font-size: 0.9em;      /* slightly smaller than buttons/text */
+  border: 1px solid #aaa;
+  border-radius: 4px;
+}
+
+/* labels for the inputs */
+.input-label {
+  font-size: 0.9em;
+  color: #222;
+  margin-left: 6px;
+  margin-right: 2px;
+}
+
+.flex-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+#controls button {
+  padding: 4px 8px;
+  font-size: 0.95em;
+}
+
+.calc-input {
+  width: 50px;          /* smaller width */
+  padding: 2px 4px;
+  font-size: 0.85em;    /* slightly smaller font */
+  border: 1px solid #aaa;
+  border-radius: 4px;
+}
+
+.input-label {
+  font-size: 0.85em;    /* slightly smaller */
+  color: #222;
+  margin-left: 3px;
+  margin-right: 2px;
+}
+
+  }
+</style>
+</head>
+
+<body>
+
+<div id="controls">
+
+  <div class="row flex-row">
+    <button id="finish">Calculate Total Road Distance</button>
+    <button id="clear">Clear</button>
+	<button id="exportPdf" style="display:none;">Export to PDF</button>
+  </div>
+
+<div class="row flex-row">
+  <button id="calc">Road Base</button>
+
+  <span class="input-label">Width(ft):</span>
+  <input type="number" class="calc-input" id="widthFeet" value="15">
+
+  <span class="input-label">Depth(in):</span>
+  <input type="number" class="calc-input" id="depthInches" value="4">
+
+  <span class="input-label">20 CY Cost($):</span>
+  <input type="number" class="calc-input" id="costPerLoad" value="600">
+</div>
+
+
+</div>
+
+
+
+
+</div>
+
+<div id="results" style="
+  position:absolute;
+  top:80px;
+  left:10px;
+  background:white;
+  border:2px solid #333;
+  padding:8px;
+  display:none;
+  z-index:9999;
+">
+</div>
+
+<div id="map"></div>
+
+
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
+
+<script>
+
+// ---- fixed center ----
+const center = L.latLng(37.647864, -105.564094);
+
+// ---- map ----
+const map = L.map('map').setView(center, 14);
+
+// ---- OSM tiles ----
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+// ---- radius circle ----
+const RADIUS_METERS = 1.5 * 1609.34;
+
+L.circle(center, {
+  radius: RADIUS_METERS,
+  color: 'blue',
+  fillOpacity: 0.05
+}).addTo(map);
+
+// L.marker(center).addTo(map)
+//  .bindPopup("Center point<br>1.5 mile radius");
+
+// --- Auto Calculate ---
+function addSegmentIfNeeded() {
+  if (points.length < 2) return; // need at least 2 points for a segment
+
+  const i = points.length - 2; // index of start of new segment
+
+  // remove any previous control for this segment (optional)
+  // routingControls[i] && map.removeControl(routingControls[i]);
+
+  const rc = L.Routing.control({
+    waypoints: [points[i], points[i+1]],
+    router: L.Routing.osrmv1({
+      serviceUrl: 'https://router.project-osrm.org/route/v1'
+    }),
+    addWaypoints: false,
+    draggableWaypoints: false,
+    fitSelectedRoutes: false,
+    showAlternatives: false,
+    createMarker: () => null
+  })
+  .on('routesfound', function(event) {
+
+    const route = event.routes[0];
+    const meters = route.summary.totalDistance;
+
+    // add to total
+    totalMeters = (typeof totalMeters !== 'undefined') ? totalMeters + meters : meters;
+
+    const miles = (meters / 1609.34).toFixed(2);
+
+    const coords = route.coordinates;
+    const midIndex = Math.floor(coords.length / 2);
+    const mid = coords[midIndex];
+
+    const label = L.marker([mid.lat, mid.lng], {
+      icon: L.divIcon({
+        className: 'segment-label',
+        html: miles + " mi"
+      })
+    }).addTo(map);
+
+    labels.push(label);
+
+    // update total label
+    if (totalLabel) map.removeLayer(totalLabel);
+
+    const totalMiles = (totalMeters / 1609.34).toFixed(2);
+
+    totalLabel = L.marker(center, {
+      icon: L.divIcon({
+        className: 'total-label',
+        html: "Total distance: " + totalMiles + " mi"
+      })
+    }).addTo(map);
+
+  })
+  .addTo(map);
+
+  routingControls.push(rc);
+}
+
+
+
+// ---- Road Base ----
+var resultsControl = L.control({ position: 'topright' });
+
+resultsControl.onAdd = function() {
+  var div = L.DomUtil.create('div', 'results-control');
+  div.id = "calculatorResults";
+  div.innerHTML = "";
+  return div;
+};
+
+resultsControl.addTo(map);
+
+// ---- state ----
+let points = [];
+let markers = [];
+let routingControls = [];
+let labels = [];
+let totalLabel = null;
+
+// ---- helpers ----
+function withinRadius(latlng) {
+  return center.distanceTo(latlng) <= RADIUS_METERS;
+}
+
+// ---- map click adds vertices ----
+map.on('click', function(e) {
+
+  if (!withinRadius(e.latlng)) {
+    alert("That point is outside the 1.5 mile radius.");
+    return;
+  }
+
+  points.push(e.latlng);
+
+  const m = L.marker(e.latlng).addTo(map);
+  markers.push(m);
+
+  // automatically calculate segment if at least 2 points
+  addSegmentIfNeeded();
+});
+
+
+// ---- calculate button ----
+document.getElementById("finish").onclick = function() {
+
+  if (points.length < 2) {
+    alert("Select at least two points.");
+    return;
+  }
+
+  // clear previous graphics
+  routingControls.forEach(rc => map.removeControl(rc));
+  routingControls = [];
+
+  labels.forEach(l => map.removeLayer(l));
+  labels = [];
+
+  if (totalLabel) {
+    map.removeLayer(totalLabel);
+    totalLabel = null;
+  }
+
+  let totalMeters = 0;
+
+  for (let i = 0; i < points.length - 1; i++) {
+
+    const rc = L.Routing.control({
+      waypoints: [points[i], points[i+1]],
+      router: L.Routing.osrmv1({
+        serviceUrl: 'https://router.project-osrm.org/route/v1'
+      }),
+      addWaypoints: false,
+      draggableWaypoints: false,
+      fitSelectedRoutes: false,
+      showAlternatives: false,
+      createMarker: () => null
+    })
+    .on('routesfound', function(event) {
+
+      const route = event.routes[0];
+      const meters = route.summary.totalDistance;
+      totalMeters += meters;
+
+      const miles = (meters / 1609.34).toFixed(2);
+
+      const coords = route.coordinates;
+      const midIndex = Math.floor(coords.length / 2);
+      const mid = coords[midIndex];
+
+      const label = L.marker([mid.lat, mid.lng], {
+        icon: L.divIcon({
+          className: 'segment-label',
+          html: miles + " mi"
+        })
+      }).addTo(map);
+
+      labels.push(label);
+
+      // when last leg solved → place total label
+      if (i === points.length - 2) {
+
+        const totalMiles = (totalMeters / 1609.34).toFixed(2);
+
+        totalLabel = L.marker(center, {
+          icon: L.divIcon({
+            className: 'total-label',
+            html: "Total distance: " + totalMiles + " mi"
+          })
+        }).addTo(map);
+      }
+    })
+    .addTo(map);
+
+    routingControls.push(rc);
+  }
+};
+
+// ---- clear button ----
+document.getElementById("clear").onclick = function() {
+
+  points = [];
+
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  routingControls.forEach(rc => map.removeControl(rc));
+  routingControls = [];
+
+  labels.forEach(l => map.removeLayer(l));
+  labels = [];
+
+  if (totalLabel) {
+    map.removeLayer(totalLabel);
+    totalLabel = null;
+  }
+  
+  const panel = document.getElementById("results");
+  panel.style.display = "none";
+  panel.innerHTML = "";
+
+  document.getElementById("exportPdf").style.display = "none";
+
+};
+
+// --- calculator button ---
+document.getElementById("calc").onclick = function () {
+
+  if (!totalLabel) {
+    alert("Measure a route first so we know the distance.");
+    return;
+  }
+
+// Zoom to bounds of measured route
+if (points.length >= 2) {
+  const group = L.featureGroup(markers);
+  map.fitBounds(group.getBounds().pad(0.2)); // add 20% padding
+}
+
+  const text = totalLabel._icon.innerText;
+  const miles = parseFloat(text.replace(/[^0-9.]/g, ""));
+
+  const widthFeet = parseFloat(document.getElementById("widthFeet").value) || 15;
+  const depthInches = parseFloat(document.getElementById("depthInches").value) || 4;
+  const costPerLoad = parseFloat(document.getElementById("costPerLoad").value) || 600;
+
+  const lengthFeet = miles * 5280;
+  const depthFeet = depthInches / 12;
+
+  const cubicFeet = lengthFeet * widthFeet * depthFeet;
+  const cubicYards = cubicFeet / 27;
+
+  const loadsNeeded = cubicYards / 20;
+  const totalCost = loadsNeeded * costPerLoad;
+
+  const panel = document.getElementById("results");
+  panel.style.display = "block";
+
+  panel.innerHTML = `
+    <b>Road-Base Calculator</b><br>
+    Distance: ${miles.toFixed(2)} mi<br>
+    Width: ${widthFeet} ft<br>
+    Depth: ${depthInches} in<br>
+    <hr>
+    Volume: ${cubicYards.toFixed(0)} cubic yards<br>
+    Loads (20 CY): ${loadsNeeded.toFixed(1)}<br>
+    Cost per load: $${costPerLoad.toFixed(0)}<br>
+    <b>Total Cost: $${totalCost.toLocaleString()}</b>
+  `;
+  document.getElementById("exportPdf").style.display = "inline-block";
+};
+
+// ---- export to PDF ----
+document.getElementById("exportPdf").onclick = function () {
+  if (!totalLabel) {
+    alert("Nothing to export! Measure some segments first.");
+    return;
+  }
+
+  // create new PDF
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  let y = 20; // start vertical position
+
+  doc.setFontSize(14);
+  doc.text("Road Segment Report", 20, y);
+  y += 10;
+
+  // list each segment
+  labels.forEach((label, i) => {
+    const text = label._icon.innerText;
+    doc.setFontSize(12);
+    doc.text(`Segment ${i + 1}: ${text}`, 20, y);
+    y += 8;
+  });
+
+  // total distance
+  const totalText = totalLabel._icon.innerText;
+  doc.setFontSize(12);
+  doc.text(totalText, 20, y);
+  y += 10;
+
+  // Road Base Calculator results
+  const panel = document.getElementById("results");
+  if (panel.style.display !== "none") {
+    doc.setFontSize(12);
+    doc.text("Road Base Calculator:", 20, y);
+    y += 6;
+
+    // split results into lines
+    panel.innerText.split("\n").forEach(line => {
+      doc.text(line, 25, y);
+      y += 6;
+    });
+  }
+
+  // save PDF
+  doc.save("RoadSegments.pdf");
+};
+
+
+
+
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<script src="https://unpkg.com/leaflet-image/leaflet-image.js"></script>
+
+</body>
+</html>
