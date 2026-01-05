@@ -16,8 +16,11 @@
   #map { height: 92vh; }
 
   .segment-label {
-    padding: 2px 4px;
-    font-size: 12px;
+    padding: 2px 2px;
+    font-size: 14px;
+	line-height: 0.8;
+	font-weight:bold;
+	color: rgba(25, 25, 112, 0.9);
   }
 
   .leaflet-routing-container {
@@ -27,9 +30,10 @@
   .row { margin-bottom: 4px; }
 
   button {
-    margin-right: 6px;
-    padding: 4px 8px;
-    font-size: 0.95em;
+    margin-right: 4px;
+    padding: 4px 6px;
+    font-size: 0.90em;
+	box-shadow: 0 2px 6px rgba(0,0,0,0.25);
   }
 
   .calc-input {
@@ -38,8 +42,8 @@
     font-size: 0.85em;
     border: 1px solid #aaa;
     border-radius: 4px;
-    margin-left: 3px;
-    margin-right: 12px;
+    margin-left: 2px;
+    margin-right: 6px;
   }
 
   .input-label {
@@ -47,6 +51,14 @@
     color: #222;
     margin-left: 3px;
     margin-right: 2px;
+  }
+  
+  .zapata-label {
+    font-size: 1.20em;
+    color: #222;
+    margin-left: 3px;
+    margin-right: 2px;
+	font-weight:bold;
   }
 
   .flex-row {
@@ -94,13 +106,13 @@
 <div id="controls">
 
   <div class="row flex-row">
-    <span class="input-label">Calculate Total Road Distance</span>
+    <span class="zapata-label">Zapata Road Segment Calculator</span>
     <button id="clear">Clear</button>
     <button id="exportPdf" style="display:none;">Export to PDF</button>
   </div>
 
   <div class="row flex-row">
-    <button id="calc">Calc Road Base</button>
+    <button id="calc">Calculate Road Base</button>
 
     <span class="input-label">Width(ft):</span>
     <input type="number" class="calc-input" id="widthFeet" value="15">
@@ -133,7 +145,8 @@
   border:2px solid #333;
   padding:8px;
   display:none;
-  z-index:9999;">
+  z-index:9999;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);">
 </div>
 
 <!-- Total distance box -->
@@ -146,7 +159,8 @@
   padding:8px;
   display:none;
   z-index:9999;
-  font-weight:bold;">
+  font-weight:bold;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);">
 </div>
 
 </div>
@@ -159,7 +173,7 @@
 
 <script>
 // ---- fixed center ----
-const center = L.latLng(37.647864, -105.564094);
+const center = L.latLng(37.644310, -105.560972);
 
 // ---- map ----
 const map = L.map('map').setView(center, 14);
@@ -272,7 +286,7 @@ function addSegmentIfNeeded() {
     const label = L.marker([mid.lat, mid.lng], {
       icon: L.divIcon({
         className: 'segment-label',
-        html: miles + " mi"
+        html: miles + " mile"
       })
     }).addTo(map);
 
