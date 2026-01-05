@@ -153,8 +153,8 @@
 
 <div id="results" style="
   position:absolute;
-  top:80px;
-  left:10px;
+  top:96px;
+  left:60px;
   background:white;
   border:2px solid #333;
   padding:8px;
@@ -190,8 +190,11 @@ const RADIUS_METERS = 1.5 * 1609.34;
 L.circle(center, {
   radius: RADIUS_METERS,
   color: 'blue',
-  fillOpacity: 0.05
+  fillOpacity: 0.01
 }).addTo(map);
+
+// Save the initial bounds immediately after map initialization
+var originalBounds = map.getBounds();
 
 // L.marker(center).addTo(map)
 //  .bindPopup("Center point<br>1.5 mile radius");
@@ -390,10 +393,16 @@ document.getElementById("clear").onclick = function() {
   labels.forEach(l => map.removeLayer(l));
   labels = [];
 
+  totalMeters = 0;
+  totalMiles = 0;
+	
   if (totalLabel) {
     map.removeLayer(totalLabel);
     totalLabel = null;
   }
+  
+  // ---- recenter map ---- //
+  map.fitBounds(originalBounds)
   
   const panel = document.getElementById("results");
   panel.style.display = "none";
