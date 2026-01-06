@@ -114,7 +114,7 @@
   .weather-box {
     background:white;
 	border:2px solid #333;
-    padding:10px 14px;
+    padding:10px 12px;
     border-radius:6px;
 	opacity:0.9;
     box-shadow:0 2px 6px rgba(0,0,0,0.25);
@@ -125,7 +125,7 @@
   .wind-arrow {
     display: inline-block;
     transition: transform 0.3s ease;
-    font-size: 18px;
+    font-size: 12px;
     margin-right: 6px;
   }
 
@@ -350,14 +350,14 @@ async function loadWeather() {
     // render panel
     document.getElementById("weatherBox").innerHTML = `
       <b>Current Conditions</b><br>
+	  <span style="font-size:0.8em;color:#444;">
+      Updated ${updated}
+      </span><br>
       ${icon} ${desc}<br>
       🌡️ ${tempF} °F<br>
       💧 Humidity: ${humidity}%<br>
       <span class="wind-arrow" style="transform: rotate(${windDirDeg}deg);">🡱</span>
       ${windMph} mph ${windDirText}<br>
-      <span style="font-size:0.8em;color:#444;">
-        Updated ${updated}
-      </span>
     `;
   }
 
@@ -371,47 +371,7 @@ async function loadWeather() {
 }
 
 loadWeather();
-
-// ---- air quality ----
-async function loadAirQuality() {
-  try {
-    const lat = center.lat;
-    const lon = center.lng;
-    const apiKey = 'F4A5C12E-F2F6-4F67-B5F3-EEC27F4FC235'; // ← put your key here
-
-    // AirNow endpoint: current AQI by lat & lon
-    const url = `https://www.airnowapi.org/aq/observation/latLong/current?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${apiKey}`;
-
-    const resp = await fetch(url);
-    const data = await resp.json();
-
-    console.log("AirNow data:", data);
-
-    // If no data returned, show placeholder
-    if (!data || data.length === 0) {
-      document.getElementById("weatherBox").innerHTML += "<br>🫁 AQI: N/A";
-      return;
-    }
-
-    // Usually the first item is the closest monitor
-    const aqiInfo = data[0];
-    const aqi = aqiInfo.AQI;
-    const category = aqiInfo.Category?.Name || "Unknown";
-
-    document.getElementById("weatherBox").innerHTML += 
-      `<br>🫁 AQI: ${aqi} (${category})`;
-
-  } catch (err) {
-    console.error("AirNow error:", err);
-    document.getElementById("weatherBox").innerHTML += "<br>🫁 AQI: Error";
-  }
-}
-
-loadAirQuality();
-
-// --- auto refresh
-setInterval(loadAirQuality, 10 * 60 * 1000); // refresh every 10 minutes
-setInterval(loadWeather, 10 * 60 * 1000); // refresh every 10 minutes
+setInterval(loadWeather, 10 * 60 * 999); // refresh every 10 minutes
 
 // ---- parcel link ----
 document.getElementById("parcelBtn").addEventListener("click", function () {
@@ -472,6 +432,45 @@ let routingControls = [];
 let labels = [];
 let totalMeters = 0;
 let segmentMeters = [];
+
+// ---- air quality ----
+async function loadAirQuality() {
+  try {
+    const lat = center.lat;
+    const lon = center.lng;
+    const apiKey = 'F4A5C12E-F2F6-4F67-B5F3-EEC27F4FC235'; // ← put your key here
+
+    // AirNow endpoint: current AQI by lat & lon
+    const url = `https://www.airnowapi.org/aq/observation/latLong/current?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${apiKey}`;
+
+    const resp = await fetch(url);
+    const data = await resp.json();
+
+    // console.log("AirNow data:", data);
+
+    // If no data returned, show placeholder
+    if (!data || data.length === 0) {
+      document.getElementById("weatherBox").innerHTML += "🫁 AQI: N/A";
+      return;
+    }
+
+    // Usually the first item is the closest monitor
+    const aqiInfo = data[0];
+    const aqi = aqiInfo.AQI;
+    const category = aqiInfo.Category?.Name || "Unknown";
+
+    document.getElementById("weatherBox").innerHTML += 
+      `🫁 AQI: ${aqi} (${category})`;
+
+  } catch (err) {
+    console.error("AirNow error:", err);
+    document.getElementById("weatherBox").innerHTML += "🫁 AQI: Error";
+  }
+}
+
+loadAirQuality();
+// --- auto refresh
+setInterval(loadAirQuality, 10 * 60 * 1000); // refresh every 10 minutes
 
 
 // ---- helpers ----
