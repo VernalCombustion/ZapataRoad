@@ -450,7 +450,7 @@ async function loadAirQuality() {
 
     // If no data returned, show placeholder
     if (!data || data.length === 0) {
-      document.getElementById("weatherBox").innerHTML += "🫁 AQI: N/A";
+      document.getElementById("weatherBox").innerHTML += "🌷 AQI: N/A";
       return;
     }
 
@@ -460,11 +460,11 @@ async function loadAirQuality() {
     const category = aqiInfo.Category?.Name || "Unknown";
 
     document.getElementById("weatherBox").innerHTML += 
-      `🫁 AQI: ${aqi} (${category})`;
+      `🌷 AQI: ${aqi} (${category})`;
 
   } catch (err) {
     console.error("AirNow error:", err);
-    document.getElementById("weatherBox").innerHTML += "🫁 AQI: Error";
+    document.getElementById("weatherBox").innerHTML += "🌷 AQI: Error";
   }
 }
 
@@ -769,7 +769,7 @@ for (let p of panes) {
 
   // --- 2) Add total distance summary ---
   const miles = (totalMeters / 1609.34).toFixed(2);
-  doc.setFontSize(12);
+  doc.setFontSize(10);
   doc.text(`Total Distance: ${miles} mi`, 20, y);
   y += 8;
 
