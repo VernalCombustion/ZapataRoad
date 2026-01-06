@@ -98,6 +98,37 @@
     background: #dce7ff;
     border-color: #1f4fe0;
   }
+  
+  .north-arrow {
+  background: white;
+  border:2px solid #333;
+  border-radius: 6px;
+  opacity:0.9;
+  padding: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  font-family: "Fira Sans", sans-serif;
+  text-align: center;
+  font-size: 12px;
+  }
+
+  .weather-box {
+    background:white;
+	border:2px solid #333;
+    padding:10px 14px;
+    border-radius:6px;
+	opacity:0.9;
+    box-shadow:0 2px 6px rgba(0,0,0,0.25);
+    font-family:"Fira Sans", sans-serif;
+    font-size:0.9em;
+  }
+
+  .wind-arrow {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-size: 18px;
+    margin-right: 6px;
+  }
+
 </style>
 </head>
 
@@ -143,6 +174,8 @@
   left:60px;
   background:white;
   border:2px solid #333;
+  border-radius: 6px;
+  opacity:0.9;
   padding:8px;
   display:none;
   z-index:9999;
@@ -156,6 +189,8 @@
   left:226px;
   background:white;
   border:2px solid #333;
+  border-radius: 6px;
+  opacity:0.9;
   padding:8px;
   display:none;
   z-index:9999;
@@ -176,7 +211,11 @@
 const center = L.latLng(37.644310, -105.560972);
 
 // ---- map ----
-const map = L.map('map').setView(center, 14);
+const map = L.map('map', {
+  preferCanvas: true,
+  disable3D: true,
+  renderer: L.canvas()
+}).setView(center, 14);
 
 // ---- basemap layers ----
 const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -184,21 +223,163 @@ const street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
   attribution: '© OpenStreetMap contributors'
 });
 
-const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-  maxZoom: 17,
-  attribution: '© OpenTopoMap contributors'
-});
+const topo = L.tileLayer(
+'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
+  {
+    maxZoom: 19,
+    attribution: "USGS Topographic Map"
+  }
+);
 
 const satellite = L.tileLayer(
-  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
   {
     maxZoom: 19,
     attribution: 'Tiles © Esri'
   }
 );
 
-// default
+// default and polyreplicate
 let currentBase = street.addTo(map);
+let customPolylines = [];
+
+// scale
+L.control.scale({
+  position: 'bottomright',
+  imperial: true,
+  metric: false
+}).addTo(map);
+
+// north arrow
+const northControl = L.control({ position: 'bottomright' });
+
+northControl.onAdd = function () {
+  const div = L.DomUtil.create('div', 'north-arrow');
+  div.innerHTML = `
+    <div style="font-size:20px;">⬆</div>
+    <div>North</div>
+  `;
+  return div;
+};
+
+northControl.addTo(map);
+
+// weather control
+const weatherControl = L.control({ position: 'topright' });
+
+weatherControl.onAdd = function () {
+  const div = L.DomUtil.create('div', 'weather-box');
+  div.id = "weatherBox";
+  div.innerHTML = "Loading weather…";
+  return div;
+};
+
+weatherControl.addTo(map);
+
+// weather helper
+function degreesToCardinal(deg) {
+  if (deg == null) return "";
+  const dirs = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S",
+                "SSW","SW","WSW","W","WNW","NW","NNW"];
+  return dirs[Math.round(deg / 22.5) % 16];
+}
+
+function formatTime(timestamp) {
+  const d = new Date(timestamp);
+  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+
+// weather loader
+async function loadWeather() {
+  try {
+    const lat = center.lat;
+    const lon = center.lng;
+
+    // Step 1 – get metadata
+    const meta = await fetch(`https://api.weather.gov/points/${lat},${lon}`)
+      .then(r => r.json());
+
+    // Step 2 – get station list
+    const stationUrl = meta.properties.observationStations;
+
+    const stations = await fetch(stationUrl)
+      .then(r => r.json());
+
+    const station = stations.features[0].properties.stationIdentifier;
+
+    // Step 3 – latest observation
+    const obs = await fetch(`https://api.weather.gov/stations/${station}/observations/latest`)
+      .then(r => r.json());
+
+    const p = obs.properties;
+
+    // core metrics
+    const tempF = p.temperature.value != null
+      ? (p.temperature.value * 9/5 + 32).toFixed(1)
+      : "--";
+
+    const windMph = p.windSpeed.value != null
+      ? (p.windSpeed.value * 0.621371).toFixed(1)
+      : "0";
+
+    const humidity = p.relativeHumidity.value != null
+      ? p.relativeHumidity.value.toFixed(0)
+      : "--";
+
+    const windDirDeg = p.windDirection.value;
+    const windDirText = degreesToCardinal(windDirDeg);
+
+    const desc = p.textDescription || "Clear";
+
+    // icon logic – day/night
+    const isNight =
+      desc.includes("Night") ||
+      (new Date().getHours() >= 18 || new Date().getHours() <= 5);
+
+    const icon =
+      desc.includes("Snow") ? "❄️" :
+      desc.includes("Rain") ? "🌧️" :
+      desc.includes("Cloud") ? "☁️" :
+      isNight ? "🌙" : "☀️";
+
+    const updated = formatTime(p.timestamp);
+
+    // render panel
+    document.getElementById("weatherBox").innerHTML = `
+      <b>Current Conditions</b><br>
+      ${icon} ${desc}<br>
+      🌡️ ${tempF} °F<br>
+      💧 Humidity: ${humidity}%<br>
+      <span class="wind-arrow" style="transform: rotate(${windDirDeg}deg);">🡱</span>
+      ${windMph} mph ${windDirText}<br>
+      <span style="font-size:0.8em;color:#444;">
+        Updated ${updated}
+      </span>
+    `;
+  }
+
+  catch (e) {
+    console.error(e);
+    document.getElementById("weatherBox").innerHTML = `
+      <b>Weather Unavailable</b><br>
+      NWS service temporarily unreachable.
+    `;
+  }
+}
+
+loadWeather();
+setInterval(loadWeather, 10 * 60 * 1000); // refresh every 10 minutes
+
+
+// ---- hillshade relief ----
+
+// ---- contours ----
+const usgscontours = L.tileLayer(
+  "https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}",
+  { opacity: 1.0 }
+);
+
 
 // ---- basemap toggle UI ----
 function activateButton(activeId) {
@@ -227,7 +408,7 @@ document.getElementById("btnSat").onclick = () => {
 // ---- radius circle ----
 const RADIUS_METERS = 1.5 * 1609.34;
 
-L.circle(center, {
+const radiusCircle = L.circle(center, {
   radius: RADIUS_METERS,
   color: 'blue',
   fillOpacity: 0.01
@@ -269,8 +450,15 @@ function addSegmentIfNeeded() {
     draggableWaypoints: false,
     fitSelectedRoutes: false,
     showAlternatives: false,
-    createMarker: () => null
+
+    createMarker: () => null,
+
+    // 🔴 turn OFF default routing-machine line
+    routeLine: function () {
+      return L.layerGroup();   // returns empty layer group (no polyline)
+    },
   })
+  
   .on('routesfound', function(event) {
 
     const route = event.routes[0];
@@ -281,6 +469,17 @@ function addSegmentIfNeeded() {
     const miles = (meters / 1609.34).toFixed(2);
 
     const coords = route.coordinates;
+	// convert to Leaflet lat/lng array
+	const latLngs = coords.map(c => [c.lat, c.lng]);
+	// draw our OWN printable SVG polyline
+	const poly = L.polyline(latLngs, {
+		color: 'red',
+		weight: 6,
+		opacity: 0.5
+		}).addTo(map);
+	// store for later removal/toggling
+	customPolylines.push(poly);
+
     const mid = coords[Math.floor(coords.length / 2)];
 
     const label = L.marker([mid.lat, mid.lng], {
@@ -329,6 +528,9 @@ document.getElementById("clear").onclick = function() {
   routingControls.forEach(rc => map.removeControl(rc));
   routingControls = [];
 
+	customPolylines.forEach(p => map.removeLayer(p));
+	customPolylines = [];
+	
   labels.forEach(l => map.removeLayer(l));
   labels = [];
 
@@ -336,10 +538,11 @@ document.getElementById("clear").onclick = function() {
 
   document.getElementById("results").style.display = "none";
   document.getElementById("results").innerHTML = "";
-
   document.getElementById("exportPdf").style.display = "none";
-
   document.getElementById("totalDistanceBox").style.display = "none";
+  
+
+
 };
 
 // ---- calculator button ----
@@ -390,6 +593,9 @@ document.getElementById("calc").onclick = function () {
   document.getElementById("exportPdf").style.display = "inline-block";
 };
 
+
+
+
 // ---- export to PDF ----
 document.getElementById("exportPdf").onclick = async function () {
 
@@ -401,41 +607,56 @@ document.getElementById("exportPdf").onclick = async function () {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
 
-// --- 1) Grab map as it appears on screen ---
-const mapElement = document.getElementById("map");
-
-// temporarily show controls if they were hidden
-const resultsDiv = document.getElementById("results");
-const totalDiv = document.getElementById("totalDistanceBox");
-
-
-
-
 // --- Force Leaflet to redraw map and all polylines ---
 map.invalidateSize(); // recalc map size & tiles
 
+// --- 1) Grab map as it appears on screen ---
+const mapElement = document.getElementById("map");
+// temporarily show controls if they were hidden
+const resultsDiv = document.getElementById("results");
+const totalDiv = document.getElementById("totalDistanceBox");
+const polyDiv = document.getElementById("poly");
+
 // --- 1) Temporarily hide routing lines ---
-routingControls.forEach(rc => {
-    const routes = rc.getRouter() ? rc._routes : []; // fallback if needed
-    if (rc._line) map.removeLayer(rc._line); // removes the polyline from map
-});
+//routingControls.forEach(rc => {
+//    const routes = rc.getRouter() ? rc._routes : []; // fallback //if needed
+//    if (rc._line) map.removeLayer(rc._line); // removes the //polyline from map
+//});
+
+// --- 1a) ALSO hide the blue circle ---
+map.removeLayer(radiusCircle);
 
 // Small delay to ensure map redraws without lines
 await new Promise(resolve => setTimeout(resolve, 50));
 
-// --- 2) Take html2canvas snapshot ---
-const canvas = await html2canvas(mapElement, {
-    useCORS: true,
-    logging: false,
-    scale: 2
-});
-const imgData = canvas.toDataURL("image/png");
+// --- 1b) freeze CSS transforms ---
+const panes = document.getElementsByClassName('leaflet-pane');
+for (let p of panes) {
+  p.style.transform = 'none';
+}
+
+// --- 1d) force leaflet to settle ---
+// map.invalidateSize();
+// map.once('idle', function () {
+	// --- 2) Take html2canvas snapshot ---
+	const canvas = await html2canvas(mapElement, {
+		useCORS: true,
+		logging: false,
+		scale: 2
+	});
+	const imgData = canvas.toDataURL("image/png");
+// });
 
 // --- 3) Restore routing lines after snapshot ---
-routingControls.forEach(rc => rc.addTo(map));
+//routingControls.forEach(rc => rc.addTo(map));
 
+// --- 3a) Restore circle ---
+radiusCircle.addTo(map);
 
-
+// --- 3b) Restore Leaflet Transform Animations ---
+for (let p of panes) {
+  p.style.transform = '';
+}
 
 
 
@@ -448,7 +669,7 @@ routingControls.forEach(rc => rc.addTo(map));
   const formattedDateTime = now.toLocaleString(); // e.g., "1/4/2026, 8:15:30 PM"
 
   doc.setFontSize(14);
-  doc.text(`Road Segment Report - ${formattedDateTime}`, 20, 12);
+  doc.text(`Zapata Road Segment Report - ${formattedDateTime}`, 20, 12);
 
   // place image below title
   doc.addImage(imgData, "PNG", 10, 16, pdfWidth - 20, pdfHeight - 10);
