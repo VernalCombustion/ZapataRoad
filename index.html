@@ -125,7 +125,7 @@
   .wind-arrow {
     display: inline-block;
     transition: transform 0.3s ease;
-    font-size: 12px;
+    font-size: 10px;
     margin-right: 6px;
   }
 
@@ -141,7 +141,7 @@
     <button id="clear">Clear</button>
     <button id="undo" style="display:none;">Undo Marker</button>
     <button id="exportPdf" style="display:none;">Export PDF</button>
-	<button id="parcelBtn">Parcel Viewer</button>
+	<button id="parcelBtn">Parcel View</button>
   </div>
 
   <div class="row flex-row">
@@ -293,53 +293,36 @@ function formatTime(timestamp) {
 
 
 // weather loader
-async function loadWeather() {
+async function loadWeatherAndAir() {
+  const lat = center.lat;
+  const lon = center.lng;
+
   try {
-    const lat = center.lat;
-    const lon = center.lng;
+    //
+    // ---- Fetch weather.gov observation ----
+    //
+    const meta = await fetch(`https://api.weather.gov/points/${lat},${lon}`).then(r => r.json());
+    const stationsUrl = meta.properties.observationStations;
 
-    // Step 1 – get metadata
-    const meta = await fetch(`https://api.weather.gov/points/${lat},${lon}`)
-      .then(r => r.json());
-
-    // Step 2 – get station list
-    const stationUrl = meta.properties.observationStations;
-
-    const stations = await fetch(stationUrl)
-      .then(r => r.json());
-
+    const stations = await fetch(stationsUrl).then(r => r.json());
     const station = stations.features[0].properties.stationIdentifier;
 
-    // Step 3 – latest observation
-    const obs = await fetch(`https://api.weather.gov/stations/${station}/observations/latest`)
-      .then(r => r.json());
-
+    const obs = await fetch(`https://api.weather.gov/stations/${station}/observations/latest`).then(r => r.json());
     const p = obs.properties;
 
-    // core metrics
-    const tempF = p.temperature.value != null
-      ? (p.temperature.value * 9/5 + 32).toFixed(1)
-      : "--";
-
-    const windMph = p.windSpeed.value != null
-      ? (p.windSpeed.value * 0.621371).toFixed(1)
-      : "0";
-
-    const humidity = p.relativeHumidity.value != null
-      ? p.relativeHumidity.value.toFixed(0)
-      : "--";
+    const tempF = p.temperature.value != null ? (p.temperature.value * 9 / 5 + 32).toFixed(1) : "--";
+    const windMph = p.windSpeed.value != null ? (p.windSpeed.value * 0.621371).toFixed(1) : "0";
+    const humidity = p.relativeHumidity.value != null ? p.relativeHumidity.value.toFixed(0) : "--";
 
     const windDirDeg = p.windDirection.value;
     const windDirText = degreesToCardinal(windDirDeg);
-
     const desc = p.textDescription || "Clear";
 
-    // icon logic – day/night
     const isNight =
       desc.includes("Night") ||
       (new Date().getHours() >= 18 || new Date().getHours() <= 5);
 
-    const icon =
+    const iconChar =
       desc.includes("Snow") ? "❄️" :
       desc.includes("Rain") ? "🌧️" :
       desc.includes("Cloud") ? "☁️" :
@@ -347,31 +330,76 @@ async function loadWeather() {
 
     const updated = formatTime(p.timestamp);
 
-    // render panel
+    //
+    // ---- Fetch Air Quality (AirNow) ----
+    //
+    let aqiDisplay = "N/A";
+    let aqiCategory = "Unavailable";
+
+    try {
+      const apiKey = "F4A5C12E-F2F6-4F67-B5F3-EEC27F4FC235";
+      const aqiUrl = `https://www.airnowapi.org/aq/observation/latLong/current?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${apiKey}`;
+
+      const resp = await fetch(aqiUrl);
+      const data = await resp.json();
+
+      if (data && data.length > 0) {
+        const aqiInfo = data[0];
+        aqiDisplay = aqiInfo.AQI;
+        aqiCategory = aqiInfo.Category?.Name || "Unknown";
+      }
+    } catch (err) {
+      console.error("AirNow error:", err);
+    }
+
+    //
+    // ---- Render unified panel ----
+    //
     document.getElementById("weatherBox").innerHTML = `
       <b>Current Conditions</b><br>
-	  <span style="font-size:0.8em;color:#444;">
-      Updated ${updated}
+
+      <span style="font-size:0.8em;color:#444;">
+        Updated ${updated}
       </span><br>
-      ${icon} ${desc}<br>
-      🌡️ ${tempF} °F<br>
-      💧 Humidity: ${humidity}%<br>
-      <span class="wind-arrow" style="transform: rotate(${windDirDeg}deg);">🡱</span>
+
+      <span title="${desc}">
+        ${iconChar}
+      </span> ${desc}<br>
+
+      <span title="Air Temperature">
+        🌡️
+      </span> ${tempF} °F<br>
+
+      <span title="Relative Humidity">
+        💧
+      </span> Humidity: ${humidity}%<br>
+
+      <span
+        class="wind-arrow"
+        title="Wind direction and speed"
+        style="transform: rotate(${windDirDeg}deg);"
+      >🡱</span>
       ${windMph} mph ${windDirText}<br>
+
+      <span title="Air Quality Index and category">
+        🌷 AQI: ${aqiDisplay} (${aqiCategory})
+      </span>
     `;
   }
 
-  catch (e) {
-    console.error(e);
+  catch (err) {
+    console.error(err);
     document.getElementById("weatherBox").innerHTML = `
       <b>Weather Unavailable</b><br>
-      NWS service temporarily unreachable.
+      Unable to retrieve data at this moment.
     `;
   }
 }
 
-loadWeather();
-setInterval(loadWeather, 10 * 60 * 999); // refresh every 10 minutes
+// initial + interval refresh
+loadWeatherAndAir();
+setInterval(loadWeatherAndAir, 10 * 60 * 1000);
+
 
 // ---- parcel link ----
 document.getElementById("parcelBtn").addEventListener("click", function () {
@@ -432,45 +460,6 @@ let routingControls = [];
 let labels = [];
 let totalMeters = 0;
 let segmentMeters = [];
-
-// ---- air quality ----
-async function loadAirQuality() {
-  try {
-    const lat = center.lat;
-    const lon = center.lng;
-    const apiKey = 'F4A5C12E-F2F6-4F67-B5F3-EEC27F4FC235'; // ← put your key here
-
-    // AirNow endpoint: current AQI by lat & lon
-    const url = `https://www.airnowapi.org/aq/observation/latLong/current?format=application/json&latitude=${lat}&longitude=${lon}&distance=25&API_KEY=${apiKey}`;
-
-    const resp = await fetch(url);
-    const data = await resp.json();
-
-    // console.log("AirNow data:", data);
-
-    // If no data returned, show placeholder
-    if (!data || data.length === 0) {
-      document.getElementById("weatherBox").innerHTML += "🌷 AQI: N/A";
-      return;
-    }
-
-    // Usually the first item is the closest monitor
-    const aqiInfo = data[0];
-    const aqi = aqiInfo.AQI;
-    const category = aqiInfo.Category?.Name || "Unknown";
-
-    document.getElementById("weatherBox").innerHTML += 
-      `🌷 AQI: ${aqi} (${category})`;
-
-  } catch (err) {
-    console.error("AirNow error:", err);
-    document.getElementById("weatherBox").innerHTML += "🌷 AQI: Error";
-  }
-}
-
-loadAirQuality();
-// --- auto refresh
-setInterval(loadAirQuality, 10 * 60 * 1000); // refresh every 10 minutes
 
 
 // ---- helpers ----
